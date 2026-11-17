@@ -187,7 +187,18 @@ class BoardWidget(QWidget):
         self._last_move = None
         self._dragging = False
         self._drag_sq = None
+        self._flip = False
         self.update()
+
+    # ── apply_move (AI) ──────────────────────────────────────────────────────
+    def apply_move(self, move: chess.Move) -> None:
+        """Áp dụng nước đi từ AI (không emit move_made để tránh vòng lặp)."""
+        if move in self.board.legal_moves:
+            self.board.push(move)
+            self._last_move  = move
+            self._selected   = None
+            self._legal_dsts = set()
+            self.update()
 
     # ── paintEvent ───────────────────────────────────────────────────────────
     def paintEvent(self, _event) -> None:  # type: ignore[override]
