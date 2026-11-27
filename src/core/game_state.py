@@ -1,12 +1,12 @@
 """
 GameState: Trạng thái trung tâm của một ván đấu.
-Lưu: chế độ chơi, cấp độ AI, phe người chơi, lịch sử SAN.
+Lưu: chế độ chơi, cấp độ AI, cấp độ thế cờ tàn, phe người chơi, lịch sử SAN.
 MainWindow đọc/ghi object này thay vì lưu state rải rác.
 """
 from __future__ import annotations
 
 import chess
-from .constants import GameMode, AiLevel
+from .constants import GameMode, AiLevel, EndgameLevel
 
 
 class GameState:
@@ -15,19 +15,26 @@ class GameState:
 
     def reset(self) -> None:
         """Khởi tạo / đặt lại một ván đấu mới."""
-        self.mode: str        = GameMode.PVP
-        self.ai_level: int    = AiLevel.MEDIUM
-        # Phe người chơi trong chế độ PvE (chess.WHITE hoặc chess.BLACK)
+        self.mode: str = GameMode.PVP
+        self.ai_level: int = AiLevel.MEDIUM
         self.human_color: chess.Color = chess.WHITE
-        # Lịch sử nước đi dạng SAN: [("e4", True), ("e5", False), ...]
-        # Tuple: (san_string, is_white_move)
         self.move_history: list[tuple[str, bool]] = []
         self.is_game_over: bool = False
+
+        # Trạng thái cho chế độ Thế cờ tàn (Endgame)
+        self.endgame_level: int = EndgameLevel.BASIC
+        self.puzzle_index: int = 0
+        self.solved_puzzles: set[str] = set()
+        self.puzzle_attempts: int = 0
 
     # ── Helpers ───────────────────────────────────────────────────────────────
     @property
     def is_pve(self) -> bool:
         return self.mode == GameMode.PVE
+
+    @property
+    def is_endgame(self) -> bool:
+        return self.mode == GameMode.ENDGAME
 
     @property
     def ai_color(self) -> chess.Color:
@@ -50,11 +57,18 @@ class GameState:
         for _ in range(min(2, len(self.move_history))):
             self.move_history.pop()
 
-    def set_mode(self, mode: str, ai_level: int = AiLevel.MEDIUM,
-                 human_color: chess.Color = chess.WHITE) -> None:
-        self.mode        = mode
-        self.ai_level    = ai_level
+    def set_mode(
+        self,
+        mode: str,
+        ai_level: int = AiLevel.MEDIUM,
+        human_color: chess.Color = chess.WHITE,
+        endgame_level: int = EndgameLevel.BASIC,
+    ) -> None:
+        self.mode = mode
+        self.ai_level = ai_level
         self.human_color = human_color
+        self.endgame_level = endgame_level
+        self.puzzle_index = 0
+        self.puzzle_attempts = 0
         self.move_history.clear()
         self.is_game_over = False
-

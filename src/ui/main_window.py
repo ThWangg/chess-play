@@ -5,7 +5,7 @@ MainWindow: Cửa sổ chính của ứng dụng Chess Desktop.
 from __future__ import annotations
 
 import chess
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -15,8 +15,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.core.constants import AiLevel, GameMode
+from src.core.constants import AiLevel, EndgameLevel, GameMode
 from src.core.game_state import GameState
+from src.core.puzzles import find_mate_in_1_move, get_puzzles_by_level
 from src.ai.worker import AIWorker
 
 from .board_widget import BoardWidget
@@ -35,8 +36,6 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._setup_shortcuts()
-        # Hiện menu chọn chế độ ngay khi khởi động
-        self._show_game_menu(first_launch=True)
 
     # ── UI setup ──────────────────────────────────────────────────────────────
     def _setup_ui(self) -> None:
@@ -76,6 +75,12 @@ class MainWindow(QMainWindow):
         self.info_panel.flip_clicked.connect(self.board_widget.flip)
         self.info_panel.undo_clicked.connect(self._undo)
         self.info_panel.resign_clicked.connect(self._resign)
+        self.info_panel.hint_clicked.connect(self._on_endgame_hint)
+        self.info_panel.next_puzzle_clicked.connect(self._next_endgame_puzzle)
+
+        # Khởi tạo trạng thái ban đầu
+        self.info_panel.set_pvp_mode()
+        self.info_panel.update_state(self.board_widget.board)
 
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._undo)
@@ -89,18 +94,8 @@ class MainWindow(QMainWindow):
         )
 
     # ── Game Menu ─────────────────────────────────────────────────────────────
-    def _show_game_menu(self, first_launch: bool = False) -> None:
+    def _show_game_menu(self) -> None:
         """Hiện dialog chọn chế độ chơi."""
-        if not first_launch:
-            reply = QMessageBox.question(
-                self, "Ván mới",
-                "Bắt đầu ván cờ mới?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            )
-            if reply != QMessageBox.Yes:
-                return
-
         dlg = GameMenuDialog(self)
         if dlg.exec() != GameMenuDialog.Accepted:
             return
@@ -109,9 +104,10 @@ class MainWindow(QMainWindow):
 
         # Áp dụng cấu hình mới vào GameState
         self._state.set_mode(
-            mode        = dlg.selected_mode,
-            ai_level    = dlg.selected_level,
-            human_color = dlg.human_color,
+            mode          = dlg.selected_mode,
+            ai_level      = dlg.selected_level,
+            human_color   = dlg.human_color,
+            endgame_level = dlg.selected_endgame_level,
         )
 
         # Reset bàn cờ và UI
@@ -125,6 +121,8 @@ class MainWindow(QMainWindow):
             if self._state.human_color == chess.BLACK:
                 self.board_widget.flip()
                 self._trigger_ai()
+        elif self._state.is_endgame:
+            self._load_current_puzzle()
         else:
             self.info_panel.set_pvp_mode()
 
@@ -141,6 +139,10 @@ class MainWindow(QMainWindow):
         self.info_panel.add_move(san_str, board.fullmove_number, is_white)
         self.info_panel.update_state(board)
 
+        if self._state.is_endgame:
+            self._handle_endgame_move(board)
+            return
+
         if board.is_game_over():
             self._show_game_over(board)
             return
@@ -148,6 +150,92 @@ class MainWindow(QMainWindow):
         # Nếu PvE và đến lượt AI → kích hoạt worker
         if self._state.is_ai_turn(board):
             self._trigger_ai()
+
+    # ── Thế cờ tàn (Mate in 1) ────────────────────────────────────────────────
+    def _load_current_puzzle(self) -> None:
+        """Nạp thế cờ tàn hiện tại lên bàn cờ."""
+        puzzles = get_puzzles_by_level(self._state.endgame_level)
+        if not puzzles:
+            return
+        idx = self._state.puzzle_index % len(puzzles)
+        self._state.puzzle_index = idx
+        puzzle = puzzles[idx]
+
+        # Xoay bàn cờ theo phe đi trước
+        temp_board = chess.Board(puzzle.fen)
+        flip = (temp_board.turn == chess.BLACK)
+
+        self.board_widget.setEnabled(True)
+        self.board_widget.load_fen(puzzle.fen, flip=flip)
+        self.info_panel.clear_history()
+
+        level_name = EndgameLevel.LABELS.get(self._state.endgame_level, "")
+        self.info_panel.set_endgame_mode(
+            level_name=level_name,
+            puzzle_title=puzzle.title,
+            current=idx + 1,
+            total=len(puzzles),
+        )
+        self.info_panel.update_state(self.board_widget.board)
+
+    def _handle_endgame_move(self, board: chess.Board) -> None:
+        """Kiểm tra nước đi trong chế độ Thế cờ tàn (buộc phải chiếu hết trong 1 nước)."""
+        puzzles = get_puzzles_by_level(self._state.endgame_level)
+        puzzle = puzzles[self._state.puzzle_index]
+
+        if board.is_checkmate():
+            self._state.solved_puzzles.add(puzzle.id)
+            self.info_panel.set_endgame_status(
+                f"✅ Chính xác! Chiếu hết!\n{puzzle.title}",
+                is_success=True,
+            )
+            box = QMessageBox(self)
+            box.setWindowTitle("Chúc mừng!")
+            box.setText(f"✅ Chiếu hết chính xác!\nThế cờ: {puzzle.title}")
+            btn_next = box.addButton("Bài tiếp theo", QMessageBox.AcceptRole)
+            box.addButton("Ở lại", QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() == btn_next:
+                self._next_endgame_puzzle()
+        else:
+            self._state.puzzle_attempts += 1
+            self.board_widget.setEnabled(False)
+            self.info_panel.set_endgame_status(
+                "❌ Chưa chiếu hết trong 1 nước! Đang hoàn tác để thử lại...",
+                is_error=True,
+            )
+            QTimer.singleShot(550, self._revert_endgame_move)
+
+    def _revert_endgame_move(self) -> None:
+        """Trả lại vị trí ban đầu của thế cờ khi người chơi đi sai."""
+        if not self._state.is_endgame:
+            return
+        self._load_current_puzzle()
+        puzzles = get_puzzles_by_level(self._state.endgame_level)
+        puzzle = puzzles[self._state.puzzle_index]
+        self.info_panel.set_endgame_status(
+            f"❌ Nước vừa rồi chưa chiếu hết!\n🎯 {puzzle.title}",
+            is_error=True,
+        )
+
+    def _on_endgame_hint(self) -> None:
+        """Hiển thị gợi ý quân cờ cần đi và mô tả đòn đánh."""
+        if not self._state.is_endgame:
+            return
+        puzzles = get_puzzles_by_level(self._state.endgame_level)
+        puzzle = puzzles[self._state.puzzle_index]
+        mate_move = find_mate_in_1_move(self.board_widget.board.copy())
+        if mate_move:
+            self.board_widget.show_hint(mate_move.from_square)
+        self.info_panel.set_endgame_status(f"💡 Gợi ý: {puzzle.hint}")
+
+    def _next_endgame_puzzle(self) -> None:
+        """Chuyển sang thế cờ tiếp theo trong cấp độ."""
+        if not self._state.is_endgame:
+            return
+        puzzles = get_puzzles_by_level(self._state.endgame_level)
+        self._state.puzzle_index = (self._state.puzzle_index + 1) % len(puzzles)
+        self._load_current_puzzle()
 
     # ── AI Worker ─────────────────────────────────────────────────────────────
     def _trigger_ai(self) -> None:
@@ -205,6 +293,10 @@ class MainWindow(QMainWindow):
         PvP: Lùi 1 nước.
         PvE: Lùi 2 nước (nước máy + nước người) để trả lại đúng lượt.
         """
+        if self._state.is_endgame:
+            self._load_current_puzzle()
+            return
+
         if self._state.is_pve and self._worker and self._worker.isRunning():
             return   # Không undo khi AI đang tính
 

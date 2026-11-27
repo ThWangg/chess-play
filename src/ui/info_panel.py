@@ -25,10 +25,12 @@ from PySide6.QtWidgets import (
 class InfoPanel(QWidget):
     """Panel thông tin bên phải bàn cờ."""
 
-    new_game_clicked  = Signal()
-    flip_clicked      = Signal()
-    undo_clicked      = Signal()
-    resign_clicked    = Signal()
+    new_game_clicked     = Signal()
+    flip_clicked         = Signal()
+    undo_clicked         = Signal()
+    resign_clicked       = Signal()
+    hint_clicked         = Signal()
+    next_puzzle_clicked  = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -150,6 +152,30 @@ class InfoPanel(QWidget):
         self._btn_resign.setVisible(False)   # chỉ hiện khi PvE
         root.addWidget(self._btn_resign)
 
+        # ── Nút cho Thế cờ tàn (ẩn mặc định) ─────────────────────────────────
+        _BTN_BLUE = """
+            QPushButton {
+                background-color: #2471a3; color: white;
+                border: none; border-radius: 6px;
+                padding: 7px; font-size: 12px;
+            }
+            QPushButton:hover  { background-color: #3498db; }
+            QPushButton:pressed{ background-color: #1a5276; }
+        """
+        eg_row = QHBoxLayout()
+        self._btn_hint = QPushButton("💡 Gợi ý")
+        self._btn_hint.setStyleSheet(_BTN_BLUE)
+        self._btn_hint.clicked.connect(self.hint_clicked)
+        self._btn_hint.setVisible(False)
+        eg_row.addWidget(self._btn_hint)
+
+        self._btn_next_puzzle = QPushButton("⏭ Bài tiếp")
+        self._btn_next_puzzle.setStyleSheet(_BTN_BLUE)
+        self._btn_next_puzzle.clicked.connect(self.next_puzzle_clicked)
+        self._btn_next_puzzle.setVisible(False)
+        eg_row.addWidget(self._btn_next_puzzle)
+        root.addLayout(eg_row)
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def set_pve_mode(self, level_name: str) -> None:
@@ -157,6 +183,9 @@ class InfoPanel(QWidget):
         self._mode_label.setText(f"🤖 Người vs Máy  |  {level_name}")
         self._ai_label.setVisible(True)
         self._btn_resign.setVisible(True)
+        self._btn_undo.setVisible(True)
+        self._btn_hint.setVisible(False)
+        self._btn_next_puzzle.setVisible(False)
         self.set_ai_status("🤖 Máy sẵn sàng")
 
     def set_pvp_mode(self) -> None:
@@ -164,9 +193,41 @@ class InfoPanel(QWidget):
         self._mode_label.setText("👥 Người vs Người")
         self._ai_label.setVisible(False)
         self._btn_resign.setVisible(False)
+        self._btn_undo.setVisible(True)
+        self._btn_hint.setVisible(False)
+        self._btn_next_puzzle.setVisible(False)
+
+    def set_endgame_mode(
+        self,
+        level_name: str,
+        puzzle_title: str,
+        current: int,
+        total: int,
+    ) -> None:
+        """Gọi khi bắt đầu hoặc chuyển bài trong chế độ Thế cờ tàn."""
+        self._mode_label.setText(f"🧩 Thế cờ tàn ({current}/{total})\n{level_name}")
+        self._ai_label.setVisible(True)
+        self._btn_resign.setVisible(False)
+        self._btn_undo.setVisible(False)
+        self._btn_hint.setVisible(True)
+        self._btn_next_puzzle.setVisible(True)
+        self.set_endgame_status(f"🎯 {puzzle_title}\nTìm nước chiếu hết trong 1 nước!")
+
+    def set_endgame_status(self, text: str, is_error: bool = False, is_success: bool = False) -> None:
+        """Cập nhật thông báo trạng thái cho chế độ Thế cờ tàn."""
+        color = "#e74c3c" if is_error else ("#2ecc71" if is_success else "#3498db")
+        self._ai_label.setStyleSheet(
+            f"color: {color}; font-style: italic; padding: 4px;"
+            "background: #0d1b2a; border-radius: 4px;"
+        )
+        self._ai_label.setText(text)
 
     def set_ai_status(self, text: str) -> None:
         """Cập nhật dòng trạng thái AI (đang suy nghĩ / đã đi / sẵn sàng)."""
+        self._ai_label.setStyleSheet(
+            "color: #3498db; font-style: italic; padding: 4px;"
+            "background: #0d1b2a; border-radius: 4px;"
+        )
         self._ai_label.setText(text)
 
     def set_board_locked(self, locked: bool) -> None:

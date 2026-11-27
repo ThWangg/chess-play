@@ -7,8 +7,24 @@ import chess
 
 # ── Chế độ chơi ───────────────────────────────────────────────────────────────
 class GameMode:
-    PVP = "pvp"   # Người vs Người
-    PVE = "pve"   # Người vs Máy
+    PVP     = "pvp"       # Người vs Người
+    PVE     = "pve"       # Người vs Máy
+    ENDGAME = "endgame"   # Thế cờ tàn (Chiếu hết trong 1 nước)
+
+
+# ── Cấp độ Thế cờ tàn ─────────────────────────────────────────────────────────
+class EndgameLevel:
+    MATE_1 = 1   # Chiếu hết trong 1 nước
+    MATE_2 = 2   # Chiếu hết trong 2 nước
+    MATE_3 = 3   # Chiếu hết trong 3 nước
+    MATE_4 = 4   # Chiếu hết trong 4 nước
+
+    LABELS: dict[int, str] = {
+        1: "🟢 Cấp 1: Chiếu hết 1 nước",
+        2: "🟡 Cấp 2: Chiếu hết 2 nước",
+        3: "🟠 Cấp 3: Chiếu hết 3 nước",
+        4: "🔴 Cấp 4: Chiếu hết 4 nước",
+    }
 
 
 # ── Cấp độ AI ─────────────────────────────────────────────────────────────────

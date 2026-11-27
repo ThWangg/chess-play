@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.core.constants import AiLevel, GameMode
+from src.core.constants import AiLevel, EndgameLevel, GameMode
 
 _DIALOG_STYLE = """
 QDialog {
@@ -109,13 +109,16 @@ class GameMenuDialog(QDialog):
         mode_row = QHBoxLayout()
         self._rb_pvp = QRadioButton("👥  Người vs Người")
         self._rb_pve = QRadioButton("🤖  Người vs Máy")
+        self._rb_endgame = QRadioButton("🧩  Thế cờ tàn (Mate 1)")
         self._rb_pvp.setChecked(True)
         self._mode_group = QButtonGroup(self)
         self._mode_group.addButton(self._rb_pvp)
         self._mode_group.addButton(self._rb_pve)
+        self._mode_group.addButton(self._rb_endgame)
         mode_row.addWidget(self._rb_pvp)
         mode_row.addWidget(self._rb_pve)
         root.addLayout(mode_row)
+        root.addWidget(self._rb_endgame)
 
         root.addWidget(self._sep())
 
@@ -152,6 +155,23 @@ class GameMenuDialog(QDialog):
         ai_layout.addLayout(color_row)
 
         root.addWidget(self._ai_section)
+
+        # ── Cấp độ Thế cờ tàn ────────────────────────────────────────────────
+        self._endgame_section = QWidget()
+        eg_layout = QVBoxLayout(self._endgame_section)
+        eg_layout.setContentsMargins(0, 0, 0, 0)
+        eg_layout.setSpacing(8)
+
+        eg_label = QLabel("Cấp độ Thế cờ tàn (Chiếu hết trong 1 nước):")
+        eg_label.setFont(QFont("Arial", 11, QFont.Bold))
+        eg_layout.addWidget(eg_label)
+
+        self._endgame_combo = QComboBox()
+        for lvl, name in EndgameLevel.LABELS.items():
+            self._endgame_combo.addItem(name, userData=lvl)
+        eg_layout.addWidget(self._endgame_combo)
+
+        root.addWidget(self._endgame_section)
         root.addWidget(self._sep())
 
         # ── Nút OK / Hủy ────────────────────────────────────────────────────
@@ -162,22 +182,33 @@ class GameMenuDialog(QDialog):
         btns.rejected.connect(self.reject)
         root.addWidget(btns)
 
-        # Kết nối toggle hiển thị AI section
+        # Kết nối toggle hiển thị section
         self._rb_pvp.toggled.connect(self._on_mode_changed)
+        self._rb_pve.toggled.connect(self._on_mode_changed)
+        self._rb_endgame.toggled.connect(self._on_mode_changed)
         self._on_mode_changed(True)   # init state
 
     def _on_mode_changed(self, _: bool) -> None:
         self._ai_section.setVisible(self._rb_pve.isChecked())
+        self._endgame_section.setVisible(self._rb_endgame.isChecked())
         self.adjustSize()
 
     # ── Getters kết quả ───────────────────────────────────────────────────────
     @property
     def selected_mode(self) -> str:
-        return GameMode.PVE if self._rb_pve.isChecked() else GameMode.PVP
+        if self._rb_pve.isChecked():
+            return GameMode.PVE
+        if self._rb_endgame.isChecked():
+            return GameMode.ENDGAME
+        return GameMode.PVP
 
     @property
     def selected_level(self) -> int:
         return self._level_combo.currentData()
+
+    @property
+    def selected_endgame_level(self) -> int:
+        return self._endgame_combo.currentData()
 
     @property
     def human_color(self) -> chess.Color:
